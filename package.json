@@ -1,0 +1,49 @@
+{
+  "name": "recipeflow",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Web-based flowchart tool for visualizing Minecraft modpack recipe chains",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@9.15.1",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean && rimraf node_modules",
+    "prepare": "husky",
+    "db:generate": "pnpm --filter @recipeflow/api db:generate",
+    "db:push": "pnpm --filter @recipeflow/api db:push",
+    "db:migrate": "pnpm --filter @recipeflow/api db:migrate",
+    "db:migrate:deploy": "pnpm --filter @recipeflow/api db:migrate:deploy",
+    "db:seed": "pnpm --filter @recipeflow/api db:seed",
+    "db:studio": "pnpm --filter @recipeflow/api db:studio",
+    "db:reset": "pnpm --filter @recipeflow/api db:reset"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

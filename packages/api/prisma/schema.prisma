@@ -1,0 +1,172 @@
+// RecipeFlow Database Schema
+// Prisma ORM for PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== ENUMS ====================
+
+enum OAuthProvider {
+  DISCORD
+  // Future: GITHUB, GOOGLE
+}
+
+// ==================== MODELS ====================
+
+/// Modpack metadata (e.g., GT:NH, Star Technology)
+model Modpack {
+  id            String   @id @default(uuid())
+  slug          String   @unique // URL-friendly identifier
+  name          String
+  description   String?
+  curseforgeId  String?  @unique @map("curseforge_id") // CurseForge project ID for verification
+  modrinthId    String?  @unique @map("modrinth_id") // Modrinth project ID for verification
+  iconUrl       String?  @map("icon_url") // Modpack icon URL
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  versions ModpackVersion[]
+
+  @@map("modpacks")
+}
+
+/// Version tracking for modpacks (recipes can differ between versions)
+model ModpackVersion {
+  id           String    @id @default(uuid())
+  modpackId    String    @map("modpack_id")
+  version      String    // Semantic version or modpack-defined version
+  recipeHash   String?   @map("recipe_hash") // SHA-256 hash for detecting recipe changes
+  manifestHash String?   @map("manifest_hash") // Hash of mod list for verification
+  isVerified   Boolean   @default(false) @map("is_verified") // True if matches official CF/Modrinth manifest
+  syncedById   String?   @map("synced_by_id") // User who synced this version
+  syncedAt     DateTime? @map("synced_at") // When this version was synced
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  modpack    Modpack     @relation(fields: [modpackId], references: [id], onDelete: Cascade)
+  syncedBy   User?       @relation("SyncedVersions", fields: [syncedById], references: [id], onDelete: SetNull)
+  recipes    Recipe[]
+  items      Item[]
+  flowcharts Flowchart[]
+
+  @@unique([modpackId, version, manifestHash]) // Allow same version with different manifests (modified packs)
+  @@index([modpackId])
+  @@index([isVerified])
+  @@map("modpack_versions")
+}
+
+/// Recipe data with flexible JSONB storage
+/// recipeType uses mod:machine_type format (e.g., "minecraft:crafting_shaped", "gregtech:electric_blast_furnace")
+model Recipe {
+  id               String   @id @default(uuid())
+  modpackVersionId String   @map("modpack_version_id")
+  recipeId         String   @map("recipe_id") // Unique recipe identifier (e.g., "gtceu:chemical_reactor/sodium_hydroxide")
+  type             String   // Recipe type (e.g., "gregtech:machine", "minecraft:crafting_shaped")
+  sourceMod        String   @map("source_mod") // Mod that provides this recipe
+  data             Json     // JSONB - flexible recipe structure
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  modpackVersion ModpackVersion @relation(fields: [modpackVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([modpackVersionId, recipeId])
+  @@index([modpackVersionId])
+  @@index([type])
+  @@map("recipes")
+}
+
+/// OAuth users (starting with Discord)
+model User {
+  id            String        @id @default(uuid())
+  oauthProvider OAuthProvider @map("oauth_provider")
+  oauthId       String        @map("oauth_id") // Provider-specific user ID
+  username      String
+  email         String?       // User email address
+  avatar        String?       // Avatar URL
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  flowcharts     Flowchart[]
+  syncedVersions ModpackVersion[] @relation("SyncedVersions") // Versions this user synced
+  stars          Star[]
+
+  @@unique([oauthProvider, oauthId])
+  @@map("users")
+}
+
+/// User-created flowcharts with React Flow data
+model Flowchart {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  modpackVersionId String   @map("modpack_version_id")
+  name             String
+  description      String?  // User description (can explain custom configs, etc.)
+  data             Json     // JSONB - React Flow nodes/edges/viewport
+  isPublic         Boolean  @default(false) @map("is_public")
+  tags             String[] // Tags for categorization and search
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  modpackVersion ModpackVersion @relation(fields: [modpackVersionId], references: [id], onDelete: Cascade)
+  stars          Star[]
+
+  @@index([userId])
+  @@index([modpackVersionId])
+  @@index([isPublic])
+  @@map("flowcharts")
+}
+
+/// Item metadata (display names, tooltips, icons)
+model Item {
+  id               String   @id @default(uuid())
+  modpackVersionId String   @map("modpack_version_id")
+  itemId           String   @map("item_id") // e.g., "gtceu:sodium_hydroxide_dust"
+  displayName      String   @map("display_name")
+  tooltip          String[] // Array of tooltip lines
+  iconFilename     String?  @map("icon_filename") // Reference to icon file
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  modpackVersion ModpackVersion @relation(fields: [modpackVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([modpackVersionId, itemId])
+  @@index([modpackVersionId])
+  @@index([displayName])
+  @@map("items")
+}
+
+/// User stars/favorites on flowcharts
+model Star {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  flowchartId String   @map("flowchart_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flowchart Flowchart @relation(fields: [flowchartId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, flowchartId])
+  @@map("stars")
+}
+
+/// Chunked upload session tracking
+model UploadSession {
+  id             String    @id @default(uuid())
+  modpackVersionId String  @map("modpack_version_id")
+  userId         String    @map("user_id")
+  type           String    // "icons" | "items"
+  totalSize      Int       @map("total_size")
+  totalChunks    Int       @map("total_chunks")
+  chunkSize      Int       @map("chunk_size")
+  finalHash      String    @map("final_hash")
+  chunksReceived Int[]     @map("chunks_received")
+  expiresAt      DateTime  @map("expires_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("upload_sessions")
+}
